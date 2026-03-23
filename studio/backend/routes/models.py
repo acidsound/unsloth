@@ -128,52 +128,95 @@ def _resolve_hf_cache_dir() -> Path:
         return Path.home() / ".cache" / "huggingface" / "hub"
 
 
+def _is_mmproj_file(path: Path) -> bool:
+    return "mmproj" in path.name.lower()
+
+
+def _local_display_name(root: Path, path: Path) -> str:
+    rel = path.relative_to(root)
+    if path.is_file() and path.suffix.lower() == ".gguf":
+        rel = rel.with_suffix("")
+    return rel.as_posix()
+
+
+_SKIP_SCAN_DIR_NAMES = {
+    ".cache",
+    ".git",
+    ".hg",
+    ".svn",
+    ".npx",
+    ".npm",
+    "node_modules",
+    "__pycache__",
+    ".venv",
+    "venv",
+}
+
+
+def _has_non_gguf_model_files(path: Path) -> bool:
+    return (
+        (path / "config.json").exists()
+        or (path / "adapter_config.json").exists()
+        or (path / "model_index.json").exists()
+        or any(path.glob("*.safetensors"))
+        or any(path.glob("pytorch_model*.bin"))
+        or any(path.glob("model*.bin"))
+        or any(path.glob("consolidated*.bin"))
+    )
+
+
 def _scan_models_dir(models_dir: Path) -> List[LocalModelInfo]:
     if not models_dir.exists() or not models_dir.is_dir():
         return []
 
     found: List[LocalModelInfo] = []
-    for child in models_dir.iterdir():
-        if not child.is_dir():
-            continue
-        has_model_files = (
-            (child / "config.json").exists()
-            or (child / "adapter_config.json").exists()
-            or any(child.glob("*.safetensors"))
-            or any(child.glob("*.bin"))
-            or any(child.glob("*.gguf"))
-        )
-        if not has_model_files:
-            continue
+    seen_ids: set[str] = set()
+    root = models_dir.resolve()
+
+    def add_entry(path: Path) -> None:
+        resolved = path.resolve()
+        entry_id = str(resolved)
+        if entry_id in seen_ids:
+            return
+        seen_ids.add(entry_id)
         try:
-            updated_at = child.stat().st_mtime
+            updated_at = resolved.stat().st_mtime
         except OSError:
             updated_at = None
         found.append(
             LocalModelInfo(
-                id = str(child),
-                display_name = child.name,
-                path = str(child),
+                id = entry_id,
+                display_name = _local_display_name(root, resolved),
+                path = entry_id,
                 source = "models_dir",
                 updated_at = updated_at,
             ),
         )
-    # Also scan for standalone .gguf files directly in the models directory
-    for gguf_file in models_dir.glob("*.gguf"):
-        if gguf_file.is_file():
-            try:
-                updated_at = gguf_file.stat().st_mtime
-            except OSError:
-                updated_at = None
-            found.append(
-                LocalModelInfo(
-                    id = str(gguf_file),
-                    display_name = gguf_file.stem,
-                    path = str(gguf_file),
-                    source = "models_dir",
-                    updated_at = updated_at,
-                ),
-            )
+
+    def _walk_error(_: OSError) -> None:
+        return None
+
+    for current_root, dir_names, file_names in os.walk(
+        models_dir,
+        topdown = True,
+        onerror = _walk_error,
+        followlinks = False,
+    ):
+        dir_names[:] = [
+            name for name in dir_names
+            if name not in _SKIP_SCAN_DIR_NAMES and not name.startswith(".")
+        ]
+
+        current_dir = Path(current_root)
+        if current_dir != models_dir and _has_non_gguf_model_files(current_dir):
+            add_entry(current_dir)
+
+        for file_name in sorted(file_names):
+            if not file_name.lower().endswith(".gguf"):
+                continue
+            gguf_file = current_dir / file_name
+            if not _is_mmproj_file(gguf_file):
+                add_entry(gguf_file)
 
     return found
 

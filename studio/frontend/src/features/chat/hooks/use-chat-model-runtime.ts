@@ -24,6 +24,7 @@ import type {
 
 type SelectedModelInput = {
   id: string;
+  displayName?: string;
   isLora?: boolean;
   ggufVariant?: string;
   loadingDescription?: string;
@@ -40,6 +41,11 @@ const MODEL_LOAD_TOAST_CLASSNAMES = {
 } as const;
 
 const LORA_SUFFIX_RE = /_(\d{9,})$/;
+
+function formatModelDisplayName(value: string): string {
+  const lastSegment = value.split(/[\\/]/).filter(Boolean).at(-1) ?? value;
+  return lastSegment.replace(/\.gguf$/i, "");
+}
 
 function parseTrailingEpoch(input: string): number | undefined {
   const match = input.match(LORA_SUFFIX_RE);
@@ -85,7 +91,7 @@ function toChatModelSummary(model: {
 }): ChatModelSummary {
   return {
     id: model.id,
-    name: model.name || model.id,
+    name: formatModelDisplayName(model.name || model.id),
     description: describeModel(model),
     isLora: Boolean(model.is_lora),
     isVision: Boolean(model.is_vision),
@@ -304,6 +310,8 @@ export function useChatModelRuntime() {
 
       const explicitIsLora =
         typeof selection === "string" ? undefined : selection.isLora;
+      const explicitDisplayName =
+        typeof selection === "string" ? undefined : selection.displayName;
       const extraLoadingDescription =
         typeof selection === "string" ? undefined : selection.loadingDescription;
       const isDownloaded =
@@ -312,7 +320,8 @@ export function useChatModelRuntime() {
       const lora = loras.find((entry) => entry.id === modelId);
       const isLora =
         explicitIsLora ?? model?.isLora ?? (lora ? true : false);
-      const displayName = model?.name || lora?.name || modelId;
+      const displayName =
+        explicitDisplayName ?? model?.name ?? lora?.name ?? formatModelDisplayName(modelId);
       const currentCheckpoint =
         useChatRuntimeStore.getState().params.checkpoint;
       const previousCheckpoint = currentCheckpoint;
@@ -364,7 +373,7 @@ export function useChatModelRuntime() {
               load_in_4bit: true,
               is_lora: isLora,
               gguf_variant: ggufVariant ?? null,
-            });
+            }, abortCtrl.signal);
 
             if (currentCheckpoint) {
               await unloadModel({ model_path: currentCheckpoint });
@@ -382,7 +391,7 @@ export function useChatModelRuntime() {
               trust_remote_code: paramsBeforeLoad.trustRemoteCode ?? false,
               chat_template_override: chatTemplateOverride,
               cache_type_kv: kvCacheDtype,
-            });
+            }, abortCtrl.signal);
 
             // If cancelled while loading, don't update UI to show
             // the model as active -- it's being unloaded.

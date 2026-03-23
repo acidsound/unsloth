@@ -25,6 +25,10 @@ def normalize_path(path: str) -> str:
     if not path:
         return path
 
+    # Keep native Windows paths when the backend itself runs on Windows.
+    if os.name == "nt":
+        return path
+
     # Handle Windows drive letters (C:\\ or c:\\)
     if len(path) >= 3 and path[1] == ":" and path[2] in ("\\", "/"):
         drive = path[0].lower()

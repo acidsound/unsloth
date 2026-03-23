@@ -26,6 +26,12 @@ _FAMILY_DEFAULTS: Optional[Dict[str, Any]] = None
 _FAMILY_PATTERNS: Optional[list] = None
 
 
+def _safe_model_filename(model_identifier: str) -> str:
+    path_name = Path(model_identifier).stem or Path(model_identifier).name
+    candidate = path_name if Path(model_identifier).is_absolute() else model_identifier
+    return candidate.replace("\\", "_").replace("/", "_").replace(":", "_") + ".yaml"
+
+
 def _load_family_defaults():
     """Load and cache inference_defaults.json."""
     global _FAMILY_DEFAULTS, _FAMILY_PATTERNS
@@ -94,7 +100,7 @@ def _has_specific_yaml(model_identifier: str) -> bool:
         return True
 
     # Check for exact filename match
-    model_filename = model_identifier.replace("/", "_") + ".yaml"
+    model_filename = _safe_model_filename(model_identifier)
     for config_path in defaults_dir.rglob(model_filename):
         if config_path.is_file():
             return True

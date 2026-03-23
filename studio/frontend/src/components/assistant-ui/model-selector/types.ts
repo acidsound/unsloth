@@ -17,9 +17,16 @@ export interface LoraModelOption extends ModelOption {
   exportType?: "lora" | "merged" | "gguf";
 }
 
+export interface LocalModelOption extends ModelOption {
+  path: string;
+  source: "models_dir" | "hf_cache";
+  updatedAt?: number | null;
+}
+
 export interface ModelSelectorChangeMeta {
-  source: "hub" | "lora" | "exported";
+  source: "hub" | "lora" | "exported" | "local";
   isLora: boolean;
+  displayName?: string;
   ggufVariant?: string;
   isDownloaded?: boolean;
   expectedBytes?: number;

@@ -454,7 +454,7 @@ export function ChatPage(): ReactElement {
   }, [inferenceParams.checkpoint]);
 
   const handleCheckpointChange = useCallback(
-    (value: string, meta?: { isLora: boolean; ggufVariant?: string; isDownloaded?: boolean; expectedBytes?: number }) => {
+    (value: string, meta?: { isLora: boolean; displayName?: string; ggufVariant?: string; isDownloaded?: boolean; expectedBytes?: number }) => {
       const store = useChatRuntimeStore.getState();
       const currentCheckpoint = store.params.checkpoint;
       const currentVariant = store.activeGgufVariant;
@@ -486,6 +486,7 @@ export function ChatPage(): ReactElement {
         }
         await selectModel({
           id: value,
+          displayName: meta?.displayName,
           isLora: meta?.isLora,
           ggufVariant: meta?.ggufVariant,
           isDownloaded: meta?.isDownloaded,

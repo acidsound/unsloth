@@ -31,6 +31,14 @@ import yaml
 
 logger = get_logger(__name__)
 
+
+def _safe_yaml_lookup_name(model_name: str) -> str:
+    """Collapse local paths into a safe filename key for rglob lookups."""
+    if is_local_path(model_name):
+        path_name = Path(model_name).stem or Path(model_name).name
+        return path_name.replace("\\", "_").replace("/", "_").replace(":", "_")
+    return model_name.replace("\\", "_").replace("/", "_").replace(":", "_")
+
 # Model name mapping: maps all equivalent model names to their canonical YAML config file
 # Format: "canonical_model_name.yaml": [list of all equivalent model names]
 # Based on the model mapper provided - canonical filename is based on the first model name in the mapper
@@ -1374,7 +1382,7 @@ def load_model_defaults(model_name: str) -> Dict[str, Any]:
                                     return config
 
         # Try exact model name match (for backward compatibility)
-        model_filename = model_name.replace("/", "_") + ".yaml"
+        model_filename = _safe_yaml_lookup_name(model_name) + ".yaml"
         # Search in subfolders and root
         for config_path in defaults_dir.rglob(model_filename):
             if config_path.is_file():

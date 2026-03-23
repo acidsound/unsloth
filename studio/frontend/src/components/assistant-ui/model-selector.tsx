@@ -10,21 +10,32 @@ import {
 } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePlatformStore } from "@/config/env";
+import { listLocalModels } from "@/features/training/api/models-api";
 import { cn } from "@/lib/utils";
 import {
   ArrowDown01Icon,
   Logout01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  HubModelPicker,
+  LocalModelPicker,
+  LoraModelPicker,
+} from "./model-selector/pickers";
 import type {
   LoraModelOption,
+  LocalModelOption,
   ModelOption,
   ModelSelectorChangeMeta,
 } from "./model-selector/types";
-import { HubModelPicker, LoraModelPicker } from "./model-selector/pickers";
 
-export type { LoraModelOption, ModelOption, ModelSelectorChangeMeta } from "./model-selector/types";
+export type {
+  LoraModelOption,
+  LocalModelOption,
+  ModelOption,
+  ModelSelectorChangeMeta,
+} from "./model-selector/types";
 
 interface ModelSelectorProps {
   models: ModelOption[];
@@ -67,7 +78,7 @@ function ModelSelectorTrigger({
         className={cn(
           "flex items-center gap-2 transition-colors",
           variant === "outline" &&
-          "rounded-full border border-border/60 hover:bg-accent",
+            "rounded-full border border-border/60 hover:bg-accent",
           variant === "ghost" && "rounded-md hover:bg-accent",
           variant === "muted" && "rounded-md bg-muted hover:bg-muted/80",
           size === "sm" && "h-8 px-3 text-xs",
@@ -83,7 +94,9 @@ function ModelSelectorTrigger({
           {currentModel?.name ?? "Select model..."}
         </span>
         {currentModel?.description && (
-          <span className="text-muted-foreground text-xs">{currentModel.description}</span>
+          <span className="text-muted-foreground text-xs">
+            {currentModel.description}
+          </span>
         )}
         <HugeiconsIcon
           icon={ArrowDown01Icon}
@@ -96,6 +109,9 @@ function ModelSelectorTrigger({
 
 function ModelSelectorContent({
   models,
+  localModels,
+  isLoadingLocalModels,
+  localModelsError,
   loraModels,
   value,
   onSelect,
@@ -104,6 +120,9 @@ function ModelSelectorContent({
   dataTour,
 }: {
   models: ModelOption[];
+  localModels: LocalModelOption[];
+  isLoadingLocalModels: boolean;
+  localModelsError: string | null;
   loraModels: LoraModelOption[];
   value?: string;
   onSelect: (id: string, meta: ModelSelectorChangeMeta) => void;
@@ -123,19 +142,28 @@ function ModelSelectorContent({
         className,
       )}
     >
-      {chatOnly ? (
-        <HubModelPicker models={models} value={value} onSelect={onSelect} />
-      ) : (
-        <Tabs defaultValue="hub" className="w-full">
-          <TabsList className="mb-2 w-full">
-            <TabsTrigger value="hub">Hub models</TabsTrigger>
-            <TabsTrigger value="lora">Fine-tuned</TabsTrigger>
-          </TabsList>
+      <Tabs defaultValue="hub" className="w-full">
+        <TabsList className="mb-2 w-full">
+          <TabsTrigger value="local">Local GGUF</TabsTrigger>
+          <TabsTrigger value="hub">Hub models</TabsTrigger>
+          {!chatOnly ? <TabsTrigger value="lora">Fine-tuned</TabsTrigger> : null}
+        </TabsList>
 
-          <TabsContent value="hub" className="m-0">
-            <HubModelPicker models={models} value={value} onSelect={onSelect} />
-          </TabsContent>
+        <TabsContent value="local" className="m-0">
+          <LocalModelPicker
+            localModels={localModels}
+            value={value}
+            onSelect={onSelect}
+            loading={isLoadingLocalModels}
+            error={localModelsError}
+          />
+        </TabsContent>
 
+        <TabsContent value="hub" className="m-0">
+          <HubModelPicker models={models} value={value} onSelect={onSelect} />
+        </TabsContent>
+
+        {!chatOnly ? (
           <TabsContent value="lora" className="m-0">
             <LoraModelPicker
               loraModels={loraModels}
@@ -143,8 +171,8 @@ function ModelSelectorContent({
               onSelect={onSelect}
             />
           </TabsContent>
-        </Tabs>
-      )}
+        ) : null}
+      </Tabs>
 
       {hasSelection && onEject ? (
         <div className="mt-2 border-t border-border/70 pt-2">
@@ -184,25 +212,77 @@ export function ModelSelector({
   const open = controlledOpen ?? uncontrolledOpen;
   const setOpen = onOpenChange ?? setUncontrolledOpen;
   const [uncontrolled, setUncontrolled] = useState(defaultValue ?? "");
+  const [localModels, setLocalModels] = useState<LocalModelOption[]>([]);
+  const [isLoadingLocalModels, setIsLoadingLocalModels] = useState(false);
+  const [localModelsError, setLocalModelsError] = useState<string | null>(null);
 
   const selected = value ?? uncontrolled;
   const isLoaded = selected !== "";
+
+  useEffect(() => {
+    if (!open) return;
+
+    const abortController = new AbortController();
+    setIsLoadingLocalModels(true);
+    setLocalModelsError(null);
+
+    listLocalModels(abortController.signal)
+      .then((items) => {
+        const next = items
+          .filter(
+            (item) =>
+              item.source === "models_dir" &&
+              item.path.toLowerCase().endsWith(".gguf"),
+          )
+          .map<LocalModelOption>((item) => ({
+            id: item.id,
+            name: item.display_name,
+            path: item.path,
+            source: item.source,
+            updatedAt: item.updated_at ?? null,
+          }));
+        setLocalModels(next);
+      })
+      .catch((error) => {
+        if (abortController.signal.aborted) return;
+        setLocalModelsError(
+          error instanceof Error ? error.message : "Failed to load local models",
+        );
+      })
+      .finally(() => {
+        if (!abortController.signal.aborted) {
+          setIsLoadingLocalModels(false);
+        }
+      });
+
+    return () => {
+      abortController.abort();
+    };
+  }, [open]);
 
   const optionById = useMemo(() => {
     const all = new Map<string, ModelOption>();
     for (const model of models) {
       all.set(model.id, model);
     }
+    for (const localModel of localModels) {
+      const description =
+        localModel.path.toLowerCase().endsWith(".gguf") ? "Local GGUF" : "Local";
+      all.set(localModel.id, {
+        ...localModel,
+        description,
+      });
+    }
     for (const lora of loraModels) {
-      // Strip "/ suffix" from display name (e.g. "foo_123/foo" → "foo_123")
       const displayName = lora.name.includes("/")
         ? lora.name.split("/")[0].trim()
         : lora.name;
-      // Show type tag instead of base model name
       const isExported = lora.source === "exported";
       const isMerged = lora.exportType === "merged";
       const tag = isExported
-        ? isMerged ? "Merged · Exported" : "LoRA"
+        ? isMerged
+          ? "Merged Exported"
+          : "LoRA"
         : "LoRA";
       all.set(lora.id, {
         ...lora,
@@ -211,14 +291,16 @@ export function ModelSelector({
       });
     }
     return all;
-  }, [loraModels, models]);
+  }, [localModels, loraModels, models]);
 
   const currentModel = useMemo(() => {
     if (!selected) return undefined;
     const found = optionById.get(selected);
     if (activeGgufVariant) {
-      const desc = `GGUF · ${activeGgufVariant}`;
-      return found ? { ...found, description: desc } : { id: selected, name: selected, description: desc };
+      const description = `GGUF ${activeGgufVariant}`;
+      return found
+        ? { ...found, description }
+        : { id: selected, name: selected, description };
     }
     return found ?? { id: selected, name: selected };
   }, [selected, optionById, activeGgufVariant]);
@@ -249,6 +331,9 @@ export function ModelSelector({
       />
       <ModelSelectorContent
         models={models}
+        localModels={localModels}
+        isLoadingLocalModels={isLoadingLocalModels}
+        localModelsError={localModelsError}
         loraModels={loraModels}
         value={selected}
         onSelect={handleSelect}

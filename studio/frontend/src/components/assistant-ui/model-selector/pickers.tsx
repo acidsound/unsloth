@@ -39,6 +39,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { toast } from "sonner";
 import type {
   LoraModelOption,
+  LocalModelOption,
   ModelOption,
   ModelSelectorChangeMeta,
 } from "./types";
@@ -887,6 +888,102 @@ export function LoraModelPicker({
                 })}
               </div>
             ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function LocalModelPicker({
+  localModels,
+  value,
+  onSelect,
+  loading = false,
+  error = null,
+}: {
+  localModels: LocalModelOption[];
+  value?: string;
+  onSelect: (id: string, meta: ModelSelectorChangeMeta) => void;
+  loading?: boolean;
+  error?: string | null;
+}) {
+  const [query, setQuery] = useState("");
+
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return [...localModels]
+      .sort((a, b) => {
+        const aTime = a.updatedAt ?? -1;
+        const bTime = b.updatedAt ?? -1;
+        if (aTime !== bTime) return bTime - aTime;
+        return a.name.localeCompare(b.name);
+      })
+      .filter((model) => {
+        if (!needle) return true;
+        const haystack = `${model.name} ${model.path}`.toLowerCase();
+        return haystack.includes(needle);
+      });
+  }, [localModels, query]);
+
+  return (
+    <div className="space-y-2">
+      <div className="relative">
+        <HugeiconsIcon
+          icon={Search01Icon}
+          className="pointer-events-none absolute left-2.5 top-2.5 size-4 text-muted-foreground"
+        />
+        <Input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search ./models GGUF"
+          className="h-9 pl-8"
+        />
+      </div>
+
+      <div className="max-h-64 overflow-y-auto">
+        <div className="p-1">
+          {loading ? (
+            <div className="flex items-center gap-2 px-2.5 py-2 text-xs text-muted-foreground">
+              <Spinner className="size-3" />
+              Scanning local GGUF models...
+            </div>
+          ) : error ? (
+            <div className="px-2.5 py-2 text-xs text-destructive">
+              {error}
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="px-2.5 py-2 text-xs text-muted-foreground">
+              No GGUF models found under `./models`.
+            </div>
+          ) : (
+            <>
+              <ListLabel>./models</ListLabel>
+              {filtered.map((model) => {
+                return (
+                  <ModelRow
+                    key={model.id}
+                    label={model.name}
+                    meta="GGUF"
+                    selected={value === model.id}
+                    onClick={() => onSelect(model.id, {
+                      source: "local",
+                      displayName: model.name,
+                      isLora: false,
+                      isDownloaded: true,
+                    })}
+                    tooltipText={
+                      <>
+                        <span className="block break-words">{model.name}</span>
+                        <span className="mt-1 block text-[10px] text-muted-foreground break-all">
+                          {model.path}
+                        </span>
+                      </>
+                    }
+                  />
+                );
+              })}
+            </>
           )}
         </div>
       </div>

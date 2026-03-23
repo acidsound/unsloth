@@ -64,17 +64,20 @@ export async function getInferenceStatus(): Promise<InferenceStatusResponse> {
 
 export async function loadModel(
   payload: LoadModelRequest,
+  signal?: AbortSignal,
 ): Promise<LoadModelResponse> {
   const response = await authFetch("/api/inference/load", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+    signal,
   });
   return parseJsonOrThrow<LoadModelResponse>(response);
 }
 
 export async function validateModel(
   payload: LoadModelRequest,
+  signal?: AbortSignal,
 ): Promise<ValidateModelResponse> {
   const response = await authFetch("/api/inference/validate", {
     method: "POST",
@@ -84,6 +87,7 @@ export async function validateModel(
       hf_token: payload.hf_token,
       gguf_variant: payload.gguf_variant ?? null,
     }),
+    signal,
   });
   return parseJsonOrThrow<ValidateModelResponse>(response);
 }
